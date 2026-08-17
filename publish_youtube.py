@@ -41,7 +41,7 @@ def get_authenticated_service():
         token_uri="https://oauth2.googleapis.com/token",
         client_id=client_id,
         client_secret=client_secret,
-        scopes=["https://www.googleapis.com/auth/youtube", "https://www.googleapis.com/auth/youtube.upload"]
+        scopes=["https://www.googleapis.com/auth/youtube"]
     )
 
     try:
@@ -65,7 +65,7 @@ def upload_to_youtube(video_path, title, description, tags=None, category_id='10
 
     body = {
         'snippet': {
-            'title': title[:100], # YouTube max title length 100 chars
+            'title': title[:100],
             'description': description,
             'tags': tags,
             'categoryId': category_id
@@ -78,7 +78,7 @@ def upload_to_youtube(video_path, title, description, tags=None, category_id='10
 
     media = MediaFileUpload(
         str(video_path),
-        chunksize=10 * 1024 * 1024, # 10MB chunks
+        chunksize=10 * 1024 * 1024,
         resumable=True,
         mimetype='video/mp4'
     )
