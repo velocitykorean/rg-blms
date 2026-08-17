@@ -8,34 +8,33 @@ env/
 venv/
 ENV/
 build/
-develop-eggs/
 dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
 *.egg-info/
-.installed.cfg
 *.egg
 
-# Secrets & Environment
+# Secrets & Environment (CRITICAL - NEVER COMMIT)
 .env
+*.env
 service_account.json
+token_*.json
 client_secrets.json
 *.pem
 *.key
 
-# Local Large Files & Outputs (generated videos/large media)
-output_videos/*.mp4
-output_videos/*.mov
-input_audio/*.mp3
-input_audio/*.wav
-raaga blumes.zip
+# Media Files & Large Assets (CRITICAL - KEEP REPO CLEAN & SECRET)
+input_images/*
+input_audio/*
+output_videos/*
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.mp3
+*.wav
+*.m4a
+*.flac
+*.zip
 
 # Logs
 *.log
+run_log_*.txt
