@@ -1,6 +1,6 @@
 """
 Daily Automation Pipeline for Raaga Blumes
-Includes Weighted Random Repost Logic for Infinite Circulation (Run Forever Mode).
+Fully automated Google Drive sync, metadata matching, thumbnail generation, 1-hour video rendering, and YouTube publishing.
 """
 import os
 import sys
@@ -16,10 +16,10 @@ if sys.platform == 'win32':
 
 load_dotenv()
 
-from thumbnail_generator import create_thumbnail, generate_preset_thumbnail, PRESETS
+from thumbnail_generator import create_thumbnail
 from video_generator import build_hd_video
-from titles_descriptions_parser import parse_titles_descriptions, get_parsed_json_path
-from google_drive_fetch import sync_from_drive
+from titles_descriptions_parser import get_parsed_json_path
+from google_drive_fetch import fetch_one_pair_from_drive, get_repost_counts
 from publish_youtube import upload_to_youtube, set_video_thumbnail
 
 PUBLISHED_LOG = "published_songs.json"
@@ -34,16 +34,6 @@ def get_published_history():
         except Exception:
             return []
     return []
-
-def get_repost_counts():
-    """Counts how many times each audio track has been published."""
-    history = get_published_history()
-    counts = {}
-    for item in history:
-        sname = item.get("song_name", "").strip().lower()
-        if sname:
-            counts[sname] = counts.get(sname, 0) + 1
-    return counts
 
 def save_published_song(song_name, video_id, title, metadata=None):
     """Logs the newly published video into published_songs.json."""
@@ -75,59 +65,51 @@ def run_daily_pipeline(dry_run=False, custom_duration=3600):
     print("      RAAGA BLUMES AUTOMATED PUBLISHING PIPELINE   ")
     print("==================================================")
 
-    # 1. Sync from Google Drive if configured
+    candidate_audio = None
+    candidate_image = None
+    is_repost = False
+
+    # 1. Try Google Drive Fetch first (using Service Account secret)
     if os.getenv("GOOGLE_SERVICE_ACCOUNT_KEY") and os.getenv("GOOGLE_DRIVE_AUDIO_FOLDER_ID"):
-        print("\n[STEP 1] Checking & Syncing Google Drive...")
-        try:
-            sync_from_drive()
-        except Exception as e:
-            print(f"[DRIVE WARN] Drive sync notice: {e}")
+        print("\n[STEP 1] Fetching audio & image pair from Google Drive...")
+        candidate_audio, candidate_image, is_repost = fetch_one_pair_from_drive(allow_repost=ALLOW_REPOST)
 
-    # 2. Get list of all available audio tracks
-    local_audio_files = sorted(glob.glob(os.path.join(input_audio_dir, "*.mp3")) + glob.glob(os.path.join(input_audio_dir, "*.wav")))
-    if not local_audio_files:
-        print("[ERROR] No audio files found in input_audio/. Pipeline aborting.")
-        return False
+    # 2. Local Fallback if Drive is not configured or returned None
+    if not candidate_audio or not candidate_image:
+        print("\n[STEP 1 - LOCAL] Selecting audio and image from local workspace...")
+        local_audio = sorted(glob.glob(os.path.join(input_audio_dir, "*.mp3")) + glob.glob(os.path.join(input_audio_dir, "*.wav")))
+        local_images = sorted(glob.glob(os.path.join(input_images_dir, "*.[jJ][pP]*[gG]")) + glob.glob(os.path.join(input_images_dir, "*.[pP][nN][gG]")))
 
-    # 3. Get background images
-    images = glob.glob(os.path.join(input_images_dir, "*.[jJ][pP]*[gG]")) + glob.glob(os.path.join(input_images_dir, "*.[pP][nN][gG]"))
-    if not images:
-        print("[ERROR] No background images found in input_images/!")
-        return False
+        if not local_audio:
+            print("[ERROR] No audio files found locally or in Google Drive. Pipeline stopping.")
+            return False
+        if not local_images:
+            print("[ERROR] No image files found locally or in Google Drive. Pipeline stopping.")
+            return False
 
-    # 4. Selection Logic (Phase 1: Unpublished, Phase 2: Weighted Random Repost)
-    repost_counts = get_repost_counts()
-    unpublished_audio = [f for f in local_audio_files if os.path.basename(f).strip().lower() not in repost_counts]
+        repost_counts = get_repost_counts()
+        unpublished = [f for f in local_audio if os.path.basename(f).strip().lower() not in repost_counts]
 
-    if unpublished_audio:
-        # Phase 1: Pick next new song
-        candidate_audio = unpublished_audio[0]
-        mode = "NEW TRACK"
-        bg_image = images[len(repost_counts) % len(images)]
-    elif ALLOW_REPOST:
-        # Phase 2: Weighted Random Selection across all songs (least published = highest weight)
-        mode = "WEIGHTED REPOST (RECYCLE MODE)"
-        weights = []
-        for apath in local_audio_files:
-            sname = os.path.basename(apath).strip().lower()
-            count = repost_counts.get(sname, 0)
-            weight = max(1, 1000 // (3 ** min(count, 6)))
-            weights.append(weight)
-
-        candidate_audio = random.choices(local_audio_files, weights=weights, k=1)[0]
-        # Rotate image randomly for recycled tracks so thumbnail is always fresh
-        bg_image = random.choice(images)
-    else:
-        print("[INFO] All tracks published and ALLOW_REPOST is False. Stopping.")
-        return True
+        if unpublished:
+            candidate_audio = unpublished[0]
+            candidate_image = local_images[len(repost_counts) % len(local_images)]
+            is_repost = False
+        elif ALLOW_REPOST:
+            weights = [max(1, 1000 // (3 ** min(repost_counts.get(os.path.basename(f).strip().lower(), 0), 6))) for f in local_audio]
+            candidate_audio = random.choices(local_audio, weights=weights, k=1)[0]
+            candidate_image = random.choice(local_images)
+            is_repost = True
+        else:
+            print("[INFO] All tracks published and repost is disabled.")
+            return True
 
     audio_filename = os.path.basename(candidate_audio)
     song_base_name = os.path.splitext(audio_filename)[0]
-    print(f"\n[STEP 2] Mode: {mode}")
-    print(f"Selected Audio: {audio_filename} (Published {repost_counts.get(audio_filename.lower(), 0)} times before)")
-    print(f"Selected Image: {os.path.basename(bg_image)}")
+    print(f"\n[STEP 2] Selected Audio: {audio_filename}")
+    print(f"Selected Image: {os.path.basename(candidate_image)}")
+    print(f"Mode: {'WEIGHTED REPOST' if is_repost else 'NEW TRACK'}")
 
-    # 5. Metadata Matching & Title Generation
+    # 3. Match Metadata from titles_descriptions.txt
     tracks_meta = get_parsed_json_path(base_dir)
     matched_meta = None
 
@@ -140,13 +122,13 @@ def run_daily_pipeline(dry_run=False, custom_duration=3600):
     if not matched_meta and tracks_meta:
         matched_meta = tracks_meta[random.randint(0, len(tracks_meta) - 1)]
 
-    # Alternative viral hook rotation for variety
     viral_hook_presets = [
         ("Clear All", "Negative", "Energy"),
         ("Attract", "Positive", "Energy"),
         ("Stop", "Overthinking", "Instantly"),
         ("Still Awake", "At 2 AM?", "Deep Peace"),
-        ("Instant", "Stress", "Relief")
+        ("Instant", "Stress", "Relief"),
+        ("Remove", "Mental", "Blockages")
     ]
 
     if matched_meta:
@@ -157,12 +139,11 @@ def run_daily_pipeline(dry_run=False, custom_duration=3600):
         top_tag = f"RAAG {matched_meta.get('raag', 'BANSURI').upper()} · {matched_meta.get('tuning', '432Hz')}"
     else:
         yt_title = f"{song_base_name} | Indian Classical Bansuri Flute Meditation 432Hz"
-        yt_desc = f"Experience deep peace and relaxation with this Indian Classical Bansuri Flute meditation performance.\n\n#Bansuri #MeditationMusic #IndianClassical #432Hz #DeepSleep"
+        yt_desc = f"Experience deep peace and relaxation with this Indian Classical Bansuri Flute meditation performance.\n\n#Bansuri #MeditationMusic #IndianClassical #432Hz #DeepSleep #RaagaBlumes"
         yt_tags = ['Bansuri', 'MeditationMusic', 'IndianClassical', '432Hz', 'DeepSleep', 'RaagaBlumes']
         hook_text = "Deep Peace"
         top_tag = "DIVINE FLUTE MUSIC · 432Hz"
 
-    # Split hook text into lines
     words = hook_text.split()
     if len(words) <= 2:
         lines = [hook_text]
@@ -171,17 +152,16 @@ def run_daily_pipeline(dry_run=False, custom_duration=3600):
     elif len(words) == 4:
         lines = [f"{words[0]} {words[1]}", f"{words[2]} {words[3]}"]
     else:
-        # Fallback to a balanced viral layout
         lines = list(random.choice(viral_hook_presets))
 
-    # 6. Generate Custom Thumbnail (Clean, No Logo)
+    # 4. Generate Custom Thumbnail (Clean, No Logo)
     safe_name = "".join(c for c in song_base_name if c.isalnum() or c in (' ', '_', '-')).strip()
     thumb_path = os.path.join(output_thumb_dir, f"Thumb_{safe_name}.jpg")
     video_path = os.path.join(output_video_dir, f"Video_{safe_name}_1080p.mp4")
 
-    print("\n[STEP 3] Generating Thumbnail...")
+    print("\n[STEP 3] Generating Thumbnail with Clean Typography (No Logos)...")
     create_thumbnail(
-        bg_path=bg_image,
+        bg_path=candidate_image,
         output_path=thumb_path,
         top_tag=top_tag,
         lines=lines,
@@ -191,16 +171,16 @@ def run_daily_pipeline(dry_run=False, custom_duration=3600):
         glow_style="crimson"
     )
 
-    # 7. Render 1-Hour Video
-    print(f"\n[STEP 4] Rendering {custom_duration//60}-Minute 1080p Video...")
+    # 5. Render 1-Hour HD Video
+    print(f"\n[STEP 4] Rendering {custom_duration//60}-Minute 1080p Video via FFmpeg...")
     success = build_hd_video(thumb_path, video_path, audio_path=candidate_audio, duration_seconds=custom_duration)
     if not success:
         print("[ERROR] Video generation failed.")
         return False
 
-    # 8. Upload to YouTube
+    # 6. Upload & Publish to YouTube
     if dry_run:
-        print("\n[DRY RUN] Skipping upload. Video and Thumbnail generated successfully.")
+        print("\n[DRY RUN] Skipping YouTube upload. Video & Thumbnail generated successfully.")
         return True
 
     print("\n[STEP 5] Uploading to YouTube...")

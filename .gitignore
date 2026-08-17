@@ -20,6 +20,9 @@ token_*.json
 client_secrets.json
 *.pem
 *.key
+test_*.py
+trigger_*.py
+update_*.py
 
 # Media Files & Large Assets (CRITICAL - KEEP REPO CLEAN & SECRET)
 input_images/*
