@@ -200,10 +200,9 @@ def run_daily_pipeline(dry_run=False, custom_duration=3600):
 
     # 6. YouTube Publishing / Dry Run
     if dry_run:
-        print("\n[DRY RUN] Complete! Video & Thumbnail saved successfully:")
+        print("\n[DRY RUN] Complete! Video & Thumbnail saved successfully (not uploaded to YouTube):")
         print(f"  • Video:     {video_path}")
         print(f"  • Thumbnail: {thumb_path}")
-        save_published_song(audio_filename, None, yt_title, matched_meta, video_name=video_filename)
         return True
 
     print("\n[STEP 5] Uploading to YouTube...")
@@ -216,10 +215,12 @@ def run_daily_pipeline(dry_run=False, custom_duration=3600):
             print(f"🎉 SUCCESS! Video published: https://youtu.be/{video_id}")
             print("==================================================")
             return True
+        else:
+            print("[ERROR] YouTube API did not return a Video ID.")
+            return False
     except Exception as e:
-        print(f"[YOUTUBE NOTE] YouTube API upload skipped or failed: {e}")
-        save_published_song(audio_filename, None, yt_title, matched_meta, video_name=video_filename)
-        return True
+        print(f"[YOUTUBE ERROR] Upload failed: {e}")
+        return False
 
 if __name__ == "__main__":
     is_dry = "--dry-run" in sys.argv

@@ -102,7 +102,7 @@ jobs:
           echo "Pipeline completed successfully."
 
       - name: Commit published songs log
-        if: always()
+        if: success() && github.event.inputs.dry_run != 'true'
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
