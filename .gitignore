@@ -25,9 +25,12 @@ trigger_*.py
 update_*.py
 
 # Media Files & Large Assets (CRITICAL - KEEP REPO CLEAN & SECRET)
+input_videos/*
 input_images/*
 input_audio/*
 output_videos/*
+output_thumbnails/*
+temp_*.mp4
 *.mp4
 *.mov
 *.avi

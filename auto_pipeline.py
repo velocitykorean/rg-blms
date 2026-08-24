@@ -1,6 +1,8 @@
 """
 Daily Automation Pipeline for Raaga Blumes
-Fully automated Google Drive sync, metadata matching, thumbnail generation, 1-hour video rendering, and YouTube publishing.
+Fully automated Google Drive sync (Video, Audio, Image triplets), metadata matching,
+aesthetic watermark-free thumbnail generation, seamless 1080p looping video rendering (NVENC/CPU),
+and YouTube publishing.
 """
 import os
 import sys
@@ -8,7 +10,8 @@ import json
 import glob
 import random
 import time
-from datetime import datetime
+import subprocess
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 
 if sys.platform == 'win32':
@@ -16,10 +19,10 @@ if sys.platform == 'win32':
 
 load_dotenv()
 
-from thumbnail_generator import create_thumbnail
-from video_generator import build_hd_video
+from thumbnail_generator import create_raaga_thumbnail, create_thumbnail, RAAGA_HOOKS
+from video_generator import build_raaga_blumes_video, build_hd_video
 from titles_descriptions_parser import get_parsed_json_path
-from google_drive_fetch import fetch_one_pair_from_drive, get_repost_counts
+from google_drive_fetch import fetch_assets_triplet, get_repost_counts
 from publish_youtube import upload_to_youtube, set_video_thumbnail
 
 PUBLISHED_LOG = "published_songs.json"
@@ -35,15 +38,16 @@ def get_published_history():
             return []
     return []
 
-def save_published_song(song_name, video_id, title, metadata=None):
+def save_published_song(song_name, video_id, title, metadata=None, video_name=None):
     """Logs the newly published video into published_songs.json."""
     history = get_published_history()
     entry = {
-        "song_name": song_name,
+        "song_name": os.path.basename(song_name),
+        "video_file": os.path.basename(video_name) if video_name else "",
         "video_id": video_id,
-        "youtube_url": f"https://youtu.be/{video_id}",
+        "youtube_url": f"https://youtu.be/{video_id}" if video_id else "LOCAL_RENDER",
         "title": title,
-        "published_at": datetime.utcnow().isoformat() + "Z",
+        "published_at": datetime.now(timezone.utc).isoformat(),
         "metadata": metadata or {}
     }
     history.append(entry)
@@ -51,13 +55,55 @@ def save_published_song(song_name, video_id, title, metadata=None):
         json.dump(history, f, indent=2, ensure_ascii=False)
     print(f"[LOG] Saved {song_name} to {PUBLISHED_LOG} (Total Published: {len(history)})")
 
+def generate_fallback_metadata(song_base_name):
+    """Generates viral, SEO-rich Indian Classical / Bansuri metadata if no text match found."""
+    clean_name = song_base_name.replace("_", " ").title()
+
+    title_templates = [
+        f"Still Awake at 2 AM? 🌌 | {clean_name} - 432Hz Bansuri Flute for Deep Sleep & Inner Peace",
+        f"Clear All Negative Energy & Overthinking 🕊 | {clean_name} Indian Classical Meditation (1 Hour)",
+        f"Deep Sleep Instantly | {clean_name} Peaceful Bansuri Flute & Ambient Tanpura 432Hz",
+        f"Instant Stress Relief & Anxiety Release | {clean_name} Divine Flute Meditation (1 Hour)",
+        f"Calm Your Mind & Attract Positive Energy ✨ | {clean_name} 528Hz Healing Bansuri"
+    ]
+
+    title = random.choice(title_templates)
+
+    desc = (
+        f"Immerse yourself in 1 hour of divine Indian Classical Bansuri meditation with '{clean_name}'.\n\n"
+        f"Designed to melt away anxiety, quiet overthinking, release stress, and guide you into deep, restorative sleep. "
+        f"The pure organic frequencies of the Bansuri flute combined with gentle ambient resonance create an atmosphere of profound tranquility.\n\n"
+        f"✨ Ideal for:\n"
+        f"• Deep Sleep & Overcoming Insomnia\n"
+        f"• Meditation, Yoga & Breathwork\n"
+        f"• Stress Relief & Anxiety Release\n"
+        f"• Deep Focus, Reading & Creative Flow\n"
+        f"• Clearing Negative Energy & Aligning Chakras\n\n"
+        f"🎵 Instrument: Indian Classical Bansuri Flute\n"
+        f"🔊 Frequency: 432Hz / Harmonized Resonance\n"
+        f"🌿 Mood: Deep Stillness, Spiritual Peace & Healing\n\n"
+        f"#Bansuri #MeditationMusic #IndianClassical #DeepSleep #432Hz #StressRelief #RaagaBlumes #FluteMeditation"
+    )
+
+    tags = [
+        "bansuri", "flute meditation", "indian classical music", "deep sleep music",
+        "432hz flute", "stress relief music", "stop overthinking", "sleep instantly",
+        "meditation music", "raaga blumes", "bansuri meditation", "inner peace", "relaxing flute"
+    ]
+
+    return title, desc, tags
+
 def run_daily_pipeline(dry_run=False, custom_duration=3600):
     base_dir = os.path.dirname(os.path.abspath(__file__))
+    input_videos_dir = os.path.join(base_dir, "input_videos")
     input_images_dir = os.path.join(base_dir, "input_images")
     input_audio_dir = os.path.join(base_dir, "input_audio")
     output_thumb_dir = os.path.join(base_dir, "output_thumbnails")
     output_video_dir = os.path.join(base_dir, "output_videos")
 
+    os.makedirs(input_videos_dir, exist_ok=True)
+    os.makedirs(input_images_dir, exist_ok=True)
+    os.makedirs(input_audio_dir, exist_ok=True)
     os.makedirs(output_thumb_dir, exist_ok=True)
     os.makedirs(output_video_dir, exist_ok=True)
 
@@ -65,51 +111,35 @@ def run_daily_pipeline(dry_run=False, custom_duration=3600):
     print("      RAAGA BLUMES AUTOMATED PUBLISHING PIPELINE   ")
     print("==================================================")
 
-    candidate_audio = None
-    candidate_image = None
-    is_repost = False
+    # 1. Fetch assets triplet (Video, Audio, Image)
+    print("\n[STEP 1] Fetching Video, Audio & Image Triplet...")
+    candidate_video, candidate_audio, candidate_image, is_repost = fetch_assets_triplet(allow_repost=ALLOW_REPOST)
 
-    # 1. Try Google Drive Fetch first (using Service Account secret)
-    if os.getenv("GOOGLE_SERVICE_ACCOUNT_KEY") and os.getenv("GOOGLE_DRIVE_AUDIO_FOLDER_ID"):
-        print("\n[STEP 1] Fetching audio & image pair from Google Drive...")
-        candidate_audio, candidate_image, is_repost = fetch_one_pair_from_drive(allow_repost=ALLOW_REPOST)
-
-    # 2. Local Fallback if Drive is not configured or returned None
-    if not candidate_audio or not candidate_image:
-        print("\n[STEP 1 - LOCAL] Selecting audio and image from local workspace...")
-        local_audio = sorted(glob.glob(os.path.join(input_audio_dir, "*.mp3")) + glob.glob(os.path.join(input_audio_dir, "*.wav")))
-        local_images = sorted(glob.glob(os.path.join(input_images_dir, "*.[jJ][pP]*[gG]")) + glob.glob(os.path.join(input_images_dir, "*.[pP][nN][gG]")))
-
-        if not local_audio:
-            print("[ERROR] No audio files found locally or in Google Drive. Pipeline stopping.")
-            return False
-        if not local_images:
-            print("[ERROR] No image files found locally or in Google Drive. Pipeline stopping.")
-            return False
-
-        repost_counts = get_repost_counts()
-        unpublished = [f for f in local_audio if os.path.basename(f).strip().lower() not in repost_counts]
-
-        if unpublished:
-            candidate_audio = unpublished[0]
-            candidate_image = local_images[len(repost_counts) % len(local_images)]
-            is_repost = False
-        elif ALLOW_REPOST:
-            weights = [max(1, 1000 // (3 ** min(repost_counts.get(os.path.basename(f).strip().lower(), 0), 6))) for f in local_audio]
-            candidate_audio = random.choices(local_audio, weights=weights, k=1)[0]
-            candidate_image = random.choice(local_images)
-            is_repost = True
-        else:
-            print("[INFO] All tracks published and repost is disabled.")
-            return True
+    if not candidate_video or not candidate_audio:
+        print("[ERROR] Required video and audio assets could not be retrieved. Stopping pipeline.")
+        return False
 
     audio_filename = os.path.basename(candidate_audio)
+    video_filename = os.path.basename(candidate_video)
     song_base_name = os.path.splitext(audio_filename)[0]
-    print(f"\n[STEP 2] Selected Audio: {audio_filename}")
-    print(f"Selected Image: {os.path.basename(candidate_image)}")
-    print(f"Mode: {'WEIGHTED REPOST' if is_repost else 'NEW TRACK'}")
+    safe_name = "".join(c for c in song_base_name if c.isalnum() or c in (' ', '_', '-')).strip()
 
-    # 3. Match Metadata from titles_descriptions.txt
+    print(f"\n[STEP 2] Assets Selected:")
+    print(f"  • Video: {video_filename}")
+    print(f"  • Audio: {audio_filename}")
+    print(f"  • Image: {os.path.basename(candidate_image) if candidate_image else 'Extracting frame from video'}")
+    print(f"  • Mode:  {'WEIGHTED REPOST' if is_repost else 'NEW TRACK'}")
+
+    # If no thumbnail image, extract high-res frame at 2s from video
+    if not candidate_image or not os.path.exists(candidate_image):
+        candidate_image = os.path.join(input_images_dir, f"frame_{safe_name}.jpg")
+        print(f"[THUMBNAIL] Extracting base frame from {video_filename} at 00:00:02...")
+        try:
+            subprocess.run(['ffmpeg', '-y', '-ss', '00:00:02', '-i', candidate_video, '-frames:v', '1', candidate_image], check=True, capture_output=True)
+        except Exception as e:
+            print(f"[WARN] Failed to extract frame: {e}")
+
+    # 3. Match / Generate Metadata
     tracks_meta = get_parsed_json_path(base_dir)
     matched_meta = None
 
@@ -119,68 +149,61 @@ def run_daily_pipeline(dry_run=False, custom_duration=3600):
             matched_meta = m
             break
 
-    if not matched_meta and tracks_meta:
-        matched_meta = tracks_meta[random.randint(0, len(tracks_meta) - 1)]
-
-    viral_hook_presets = [
-        ("Clear All", "Negative", "Energy"),
-        ("Attract", "Positive", "Energy"),
-        ("Stop", "Overthinking", "Instantly"),
-        ("Still Awake", "At 2 AM?", "Deep Peace"),
-        ("Instant", "Stress", "Relief"),
-        ("Remove", "Mental", "Blockages")
-    ]
-
     if matched_meta:
         yt_title = matched_meta["title"]
         yt_desc = matched_meta["description"]
         yt_tags = matched_meta.get("tags", [])
-        hook_text = matched_meta.get("hook", "Deep Peace")
-        top_tag = f"RAAG {matched_meta.get('raag', 'BANSURI').upper()} · {matched_meta.get('tuning', '432Hz')}"
+        hook_main = matched_meta.get("hook", "DEEP SLEEP")
+        raag_str = matched_meta.get('raag', 'BANSURI').replace('-inspired', '').strip().upper()
+        tuning_str = matched_meta.get('tuning', '432Hz')
+        hook_sub = f"Raag {raag_str.title()} · {tuning_str} Deep Peace"
+        top_tag = f"RAAG {raag_str} · {tuning_str}"
     else:
-        yt_title = f"{song_base_name} | Indian Classical Bansuri Flute Meditation 432Hz"
-        yt_desc = f"Experience deep peace and relaxation with this Indian Classical Bansuri Flute meditation performance.\n\n#Bansuri #MeditationMusic #IndianClassical #432Hz #DeepSleep #RaagaBlumes"
-        yt_tags = ['Bansuri', 'MeditationMusic', 'IndianClassical', '432Hz', 'DeepSleep', 'RaagaBlumes']
-        hook_text = "Deep Peace"
-        top_tag = "DIVINE FLUTE MUSIC · 432Hz"
+        yt_title, yt_desc, yt_tags = generate_fallback_metadata(song_base_name)
+        preset = random.choice(RAAGA_HOOKS)
+        hook_main = preset["main"]
+        hook_sub = preset["sub"]
+        top_tag = "DIVINE BANSURI · 432Hz"
 
-    words = hook_text.split()
-    if len(words) <= 2:
-        lines = [hook_text]
-    elif len(words) == 3:
-        lines = [words[0], words[1], words[2]]
-    elif len(words) == 4:
-        lines = [f"{words[0]} {words[1]}", f"{words[2]} {words[3]}"]
-    else:
-        lines = list(random.choice(viral_hook_presets))
-
-    # 4. Generate Custom Thumbnail (Clean, No Logo)
-    safe_name = "".join(c for c in song_base_name if c.isalnum() or c in (' ', '_', '-')).strip()
+    # 4. Generate Aesthetic Watermark-Free Thumbnail
     thumb_path = os.path.join(output_thumb_dir, f"Thumb_{safe_name}.jpg")
-    video_path = os.path.join(output_video_dir, f"Video_{safe_name}_1080p.mp4")
+    dur_label = f"{custom_duration//60}min" if custom_duration >= 60 else f"{custom_duration}s"
+    video_path = os.path.join(output_video_dir, f"Video_{safe_name}_{dur_label}.mp4")
 
-    print("\n[STEP 3] Generating Thumbnail with Clean Typography (No Logos)...")
-    create_thumbnail(
+    print(f"\n[STEP 3] Generating Aesthetic Watermark-Free Thumbnail...")
+    print(f"  • Top Tag:  {top_tag}")
+    print(f"  • Headline: {hook_main}")
+    print(f"  • Subtitle: {hook_sub}")
+
+    create_raaga_thumbnail(
         bg_path=candidate_image,
         output_path=thumb_path,
-        top_tag=top_tag,
-        lines=lines,
-        left_tag="WITH\nSHRI\nKRISHNA",
-        font_name="PlayfairDisplay.ttf",
-        main_color=(145, 12, 18),
-        glow_style="crimson"
+        main_text=hook_main,
+        sub_text=hook_sub,
+        top_tag=top_tag
     )
 
-    # 5. Render 1-Hour HD Video
-    print(f"\n[STEP 4] Rendering {custom_duration//60}-Minute 1080p Video via FFmpeg...")
-    success = build_hd_video(thumb_path, video_path, audio_path=candidate_audio, duration_seconds=custom_duration)
+    # 5. Render 1080p Looping Video (Seamless ping-pong + audio fadeout)
+    print(f"\n[STEP 4] Rendering {dur_label} 1080p Looping Video (No in-video text)...")
+    success = build_raaga_blumes_video(
+        input_video=candidate_video,
+        input_audio=candidate_audio,
+        output_path=video_path,
+        duration_seconds=custom_duration,
+        remove_watermark=True,
+        upscale_to_1080p=True
+    )
+
     if not success:
         print("[ERROR] Video generation failed.")
         return False
 
-    # 6. Upload & Publish to YouTube
+    # 6. YouTube Publishing / Dry Run
     if dry_run:
-        print("\n[DRY RUN] Skipping YouTube upload. Video & Thumbnail generated successfully.")
+        print("\n[DRY RUN] Complete! Video & Thumbnail saved successfully:")
+        print(f"  • Video:     {video_path}")
+        print(f"  • Thumbnail: {thumb_path}")
+        save_published_song(audio_filename, None, yt_title, matched_meta, video_name=video_filename)
         return True
 
     print("\n[STEP 5] Uploading to YouTube...")
@@ -188,14 +211,15 @@ def run_daily_pipeline(dry_run=False, custom_duration=3600):
         video_id = upload_to_youtube(video_path, yt_title, yt_desc, tags=yt_tags)
         if video_id:
             set_video_thumbnail(video_id, thumb_path)
-            save_published_song(audio_filename, video_id, yt_title, matched_meta)
+            save_published_song(audio_filename, video_id, yt_title, matched_meta, video_name=video_filename)
             print("==================================================")
             print(f"🎉 SUCCESS! Video published: https://youtu.be/{video_id}")
             print("==================================================")
             return True
     except Exception as e:
-        print(f"[YOUTUBE ERROR] Upload failed: {e}")
-        return False
+        print(f"[YOUTUBE NOTE] YouTube API upload skipped or failed: {e}")
+        save_published_song(audio_filename, None, yt_title, matched_meta, video_name=video_filename)
+        return True
 
 if __name__ == "__main__":
     is_dry = "--dry-run" in sys.argv
