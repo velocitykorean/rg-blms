@@ -274,5 +274,30 @@
         "#CalmMusic"
       ]
     }
+  },
+  {
+    "song_name": "Chandrakauns Drift.mp3",
+    "video_file": "Lord_Krishna_at_waterfall_202608241036.mp4",
+    "video_id": "C9lZF9EShhI",
+    "youtube_url": "https://youtu.be/C9lZF9EShhI",
+    "title": "Quiet the Overthinking 🌙 | Raag Chandrakauns Bansuri 396Hz",
+    "published_at": "2026-08-27T19:02:38.468531+00:00",
+    "metadata": {
+      "index": 5,
+      "title": "Quiet the Overthinking 🌙 | Raag Chandrakauns Bansuri 396Hz",
+      "hook": "Quiet the Overthinking",
+      "description": "Enter a deep, spacious musical atmosphere with this Raag Chandrakauns-inspired Bansuri performance. Velvety flute tones, long sustained phrases, subtle improvisation, and a gentle tanpura drone create a mysterious yet peaceful listening experience.\n\n🎵 Raag: Chandrakauns-inspired\n🎻 Instrument: Bansuri\n🔊 Tuning: 396Hz\n🌿 Mood: Deep, mysterious, contemplative\n\n#Bansuri #RaagChandrakauns #IndianClassical #MeditationMusic #RelaxingMusic #396Hz",
+      "raag": "Chandrakauns-inspired",
+      "tuning": "396Hz",
+      "mood": "Deep, mysterious, contemplative",
+      "tags": [
+        "#Bansuri",
+        "#RaagChandrakauns",
+        "#IndianClassical",
+        "#MeditationMusic",
+        "#RelaxingMusic",
+        "#396Hz"
+      ]
+    }
   }
 ]
