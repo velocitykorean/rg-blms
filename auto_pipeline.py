@@ -38,14 +38,17 @@ def get_published_history():
             return []
     return []
 
-def save_published_song(song_name, video_id, title, metadata=None, video_name=None):
+def save_published_song(song_name, video_id=None, fb_video_id=None, title="", metadata=None, video_name=None):
     """Logs the newly published video into published_songs.json."""
     history = get_published_history()
+    fb_page_id = os.getenv("FB_PAGE_ID", "1363941886796791")
     entry = {
         "song_name": os.path.basename(song_name),
         "video_file": os.path.basename(video_name) if video_name else "",
         "video_id": video_id,
         "youtube_url": f"https://youtu.be/{video_id}" if video_id else "LOCAL_RENDER",
+        "facebook_id": fb_video_id,
+        "facebook_url": f"https://www.facebook.com/{fb_page_id}/videos/{fb_video_id}" if fb_video_id else None,
         "title": title,
         "published_at": datetime.now(timezone.utc).isoformat(),
         "metadata": metadata or {}
@@ -205,22 +208,32 @@ def run_daily_pipeline(dry_run=False, custom_duration=3600):
         print(f"  • Thumbnail: {thumb_path}")
         return True
 
-    print("\n[STEP 5] Uploading to YouTube...")
+    print("\n[STEP 5] Uploading to Platforms (YouTube & Facebook)...")
+    video_id = None
     try:
         video_id = upload_to_youtube(video_path, yt_title, yt_desc, tags=yt_tags)
         if video_id:
             set_video_thumbnail(video_id, thumb_path)
-            save_published_song(audio_filename, video_id, yt_title, matched_meta, video_name=video_filename)
             print("==================================================")
-            print(f"🎉 SUCCESS! Video published: https://youtu.be/{video_id}")
+            print(f"🎉 SUCCESS! Video published to YouTube: https://youtu.be/{video_id}")
             print("==================================================")
-            return True
-        else:
-            print("[ERROR] YouTube API did not return a Video ID.")
-            return False
     except Exception as e:
         print(f"[YOUTUBE ERROR] Upload failed: {e}")
-        return False
+
+    fb_video_id = None
+    try:
+        from publish_facebook import upload_to_facebook
+        print(f"\n[facebook] Uploading to Facebook Page Raaga Blumes...")
+        fb_res = upload_to_facebook(video_path, yt_title, yt_desc)
+        fb_video_id = fb_res.get("id")
+        print("==================================================")
+        print(f"🎉 SUCCESS! Video published to Facebook: {fb_video_id}")
+        print("==================================================")
+    except Exception as e_fb:
+        print(f"[FACEBOOK NOTE] Facebook upload skipped or encountered error: {e_fb}")
+
+    save_published_song(audio_filename, video_id=video_id, fb_video_id=fb_video_id, title=yt_title, metadata=matched_meta, video_name=video_filename)
+    return True if (video_id or fb_video_id) else False
 
 if __name__ == "__main__":
     is_dry = "--dry-run" in sys.argv
