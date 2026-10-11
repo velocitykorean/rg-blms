@@ -210,15 +210,19 @@ def run_daily_pipeline(dry_run=False, custom_duration=3600):
 
     print("\n[STEP 5] Uploading to Platforms (YouTube & Facebook)...")
     video_id = None
-    try:
-        video_id = upload_to_youtube(video_path, yt_title, yt_desc, tags=yt_tags)
-        if video_id:
-            set_video_thumbnail(video_id, thumb_path)
-            print("==================================================")
-            print(f"🎉 SUCCESS! Video published to YouTube: https://youtu.be/{video_id}")
-            print("==================================================")
-    except Exception as e:
-        print(f"[YOUTUBE ERROR] Upload failed: {e}")
+    upload_yt = os.getenv("UPLOAD_YOUTUBE", "true").lower() not in ("false", "0", "no")
+    if not upload_yt:
+        print("\n[youtube] Alternate-day schedule: Skipping YouTube upload today (Facebook will still publish).")
+    else:
+        try:
+            video_id = upload_to_youtube(video_path, yt_title, yt_desc, tags=yt_tags)
+            if video_id:
+                set_video_thumbnail(video_id, thumb_path)
+                print("==================================================")
+                print(f"🎉 SUCCESS! Video published to YouTube: https://youtu.be/{video_id}")
+                print("==================================================")
+        except Exception as e:
+            print(f"[YOUTUBE ERROR] Upload failed: {e}")
 
     fb_video_id = None
     try:
