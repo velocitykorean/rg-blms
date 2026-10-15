@@ -1211,5 +1211,32 @@
         "#Meditation"
       ]
     }
+  },
+  {
+    "song_name": "Bhupali Alap.mp3",
+    "video_file": "Lord_Krishna_with_dancing_peacock_202608241036.mp4",
+    "video_id": null,
+    "youtube_url": "LOCAL_RENDER",
+    "facebook_id": "3257682924430610",
+    "facebook_url": "https://www.facebook.com/1363941886796791/videos/3257682924430610",
+    "title": "Open Sky Meditation ☀️ | Raag Bhupali Bansuri 528Hz",
+    "published_at": "2026-10-15T13:35:26.437837+00:00",
+    "metadata": {
+      "index": 7,
+      "title": "Open Sky Meditation ☀️ | Raag Bhupali Bansuri 528Hz",
+      "hook": "Open Sky Meditation",
+      "description": "A pure and spacious Raag Bhupali-inspired Bansuri composition built around simple melodic movement, long notes, gentle meend, and natural acoustic texture. Let the flute create an open, uncluttered space for meditation and relaxation.\n\n🎵 Raag: Bhupali-inspired\n🎻 Instrument: Bansuri\n🔊 Tuning: 528Hz\n🌿 Mood: Open, serene, uplifting\n\n#Bansuri #RaagBhupali #IndianClassical #528Hz #MeditationMusic #PeacefulMusic",
+      "raag": "Bhupali-inspired",
+      "tuning": "528Hz",
+      "mood": "Open, serene, uplifting",
+      "tags": [
+        "#Bansuri",
+        "#RaagBhupali",
+        "#IndianClassical",
+        "#528Hz",
+        "#MeditationMusic",
+        "#PeacefulMusic"
+      ]
+    }
   }
 ]
