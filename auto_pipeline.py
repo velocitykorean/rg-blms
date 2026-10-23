@@ -243,6 +243,9 @@ if __name__ == "__main__":
     is_dry = "--dry-run" in sys.argv
     dur = 3600
     for idx, arg in enumerate(sys.argv):
-        if arg == "--duration" and idx + 1 < len(sys.argv):
-            dur = int(sys.argv[idx + 1])
+        if arg == "--duration" and idx + 1 < len(sys.argv) and sys.argv[idx + 1].strip():
+            try:
+                dur = int(sys.argv[idx + 1].strip())
+            except ValueError:
+                dur = 3600
     run_daily_pipeline(dry_run=is_dry, custom_duration=dur)
