@@ -248,4 +248,6 @@ if __name__ == "__main__":
                 dur = int(sys.argv[idx + 1].strip())
             except ValueError:
                 dur = 3600
-    run_daily_pipeline(dry_run=is_dry, custom_duration=dur)
+    ok = run_daily_pipeline(dry_run=is_dry, custom_duration=dur)
+    if not ok:
+        sys.exit(1)
